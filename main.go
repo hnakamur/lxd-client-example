@@ -2,9 +2,11 @@ package main
 
 import (
 	"bytes"
+	"flag"
 	"io"
 	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/lxc/lxd"
 )
@@ -20,8 +22,19 @@ func NopWriteCloser(w io.Writer) nopWriteCloser {
 func (nopWriteCloser) Close() error { return nil }
 
 func main() {
+	flag.Parse()
+	if flag.NArg() < 2 {
+		flag.Usage()
+		os.Exit(1)
+	}
+	args := flag.Args()
+
+	config := &lxd.DefaultConfig
+	remote, container := config.ParseRemoteAndContainer(args[0])
+	cmd := args[1:]
+
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
-	client, err := lxd.NewClient(&lxd.DefaultConfig, "local")
+	client, err := lxd.NewClient(config, remote)
 	if err != nil {
 		log.Fatalf("failed to create client")
 	}
@@ -32,8 +45,8 @@ func main() {
 	stdout := NopWriteCloser(outBuf)
 	errBuf := new(bytes.Buffer)
 	stderr := NopWriteCloser(errBuf)
-	rc, err := client.Exec("centos7", []string{"hostname"}, env,
-		stdin, stdout, stderr, nil, 0, 0)
+	rc, err := client.Exec(container, cmd,
+		env, stdin, stdout, stderr, nil, 0, 0)
 	if err != nil {
 		log.Fatalf("failed to create client")
 	}
