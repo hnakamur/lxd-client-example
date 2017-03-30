@@ -3,12 +3,15 @@ package main
 import (
 	"bytes"
 	"flag"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"log"
 	"os"
 
+	"github.com/fatih/color"
 	"github.com/lxc/lxd"
+	"github.com/pkg/errors"
 )
 
 type nopWriteCloser struct {
@@ -20,6 +23,28 @@ func NopWriteCloser(w io.Writer) nopWriteCloser {
 }
 
 func (nopWriteCloser) Close() error { return nil }
+
+type stdWriter struct {
+	w      *os.File
+	header []byte
+}
+
+func newStdWriter(w *os.File, header []byte) stdWriter {
+	return stdWriter{w: w, header: header}
+}
+
+func (w stdWriter) Write(p []byte) (int, error) {
+	_, err := w.w.Write(w.header)
+	if err != nil {
+		return 0, errors.WithStack(err)
+	}
+	return w.w.Write(p)
+}
+
+func (w stdWriter) Close() error {
+	fmt.Fprintf(os.Stderr, "Close called for %s\n", string(w.header))
+	return nil
+}
 
 func main() {
 	flag.Parse()
@@ -41,15 +66,12 @@ func main() {
 
 	var env map[string]string
 	stdin := ioutil.NopCloser(new(bytes.Buffer))
-	outBuf := new(bytes.Buffer)
-	stdout := NopWriteCloser(outBuf)
-	errBuf := new(bytes.Buffer)
-	stderr := NopWriteCloser(errBuf)
+	stdout := newStdWriter(os.Stdout, []byte("out: "))
+	stderr := newStdWriter(os.Stderr, []byte(color.RedString("err: ")))
 	rc, err := client.Exec(container, cmd,
 		env, stdin, stdout, stderr, nil, 0, 0)
 	if err != nil {
 		log.Fatalf("failed to create client")
 	}
-
-	log.Printf("rc=%d, stdout=%q, stderr=%q", rc, outBuf.String(), errBuf.String())
+	fmt.Printf("rc=%d\n", rc)
 }
